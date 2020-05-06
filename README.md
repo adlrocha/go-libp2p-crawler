@@ -64,6 +64,7 @@ Some useful resources in case you want to understand or build upon the code:
 * https://github.com/jmantas/ipfs-nodes-crawler/blob/master/ipfs-nodes-crawler.py
 * https://github.com/raulk/dht-hawk/blob/3501c82be982e2a9c6cfe430497cc43371e75714/hawk.go
 * https://godoc.org/github.com/libp2p/go-libp2p-core/discovery
+* https://godoc.org/github.com/libp2p/go-libp2p-core/network#Notifiee
 
 ### Questions
 * How to "easily" make connections to nodes behind NATs?
