@@ -70,8 +70,8 @@ func (c *Crawler) updateCount(key string, add bool) (int, error) {
 		if key == "total.count" {
 			counter = 0
 		} else if key == fmt.Sprintf("%s.count", currentDate()) {
-			// If no data for today start with yesterday's nodes
-			// data, err = c.db.Get([]byte(fmt.Sprintf("%s.count", yesterday())), nil)
+			// If no data for today start with previous total nodes
+			// (baseline for the day)
 			data, err = c.db.Get([]byte("total.count"), nil)
 
 			if string(data) == "" {

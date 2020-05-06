@@ -67,12 +67,21 @@ func main() {
 		"/p2p/QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA3gU1ZjYZcYW3dwt",
 	}
 
+	// Configure number of crawlers and liveliness
 	numCrawlers := 1
+	numLiveliness := 1
+	var err error
 	if len(os.Args) > 1 {
-		var err error
 		numCrawlers, err = strconv.Atoi(os.Args[1])
 		if err != nil {
 			log.Fatal("Wrong number of crawlers provided")
+		}
+		if len(os.Args) == 3 {
+			numLiveliness, err = strconv.Atoi(os.Args[2])
+			fmt.Println(numLiveliness, numCrawlers)
+			if (err != nil) || (numLiveliness > numCrawlers) {
+				log.Fatal("Wrong number of liveliness provided")
+			}
 		}
 	}
 
@@ -90,12 +99,14 @@ func main() {
 	}
 
 	// Start reporting after 30 seconds to let bootstrap happen
-	// TODO: We could use a waitGroup here for sync
+	// TODO: We could use a waitGroup here for sync purposes.
 	time.Sleep(30 * time.Second)
 
 	// Liveliness started just in the first crawler. This can
 	// be easily changed setting an additional argument.
-	go crawlers[0].liveliness()
+	for i := 0; i < numLiveliness; i++ {
+		go crawlers[i].liveliness()
+	}
 
 	// Start reporting
 	go reporting(ctx, db)

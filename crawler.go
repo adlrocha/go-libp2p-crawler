@@ -93,7 +93,7 @@ func (c *Crawler) liveliness() {
 				// If we could see the node but not anymore it means is out.
 
 				if node.NAT == false && canConnectErr != nil {
-					fmt.Println("Liveliness", key, node.NAT, canConnectErr)
+					// fmt.Println("Liveliness", key, node.NAT, canConnectErr)
 					c.updateCount(fmt.Sprintf("%s.left", currentDate()), true)
 					// c.updateCount(fmt.Sprintf("%s.count", currentDate()), false)
 					c.updateCount("total.count", false)
@@ -275,7 +275,7 @@ func (c *Crawler) crawlFromKey(key string) {
 
 			// If we could see the node but not anymore it means is out.
 			if stored.NAT == false && canConnectErr != nil {
-				fmt.Println("RandomWalk", pID.String(), stored.NAT, canConnectErr)
+				// fmt.Println("RandomWalk", pID.String(), stored.NAT, canConnectErr)
 
 				c.updateCount(fmt.Sprintf("%s.left", currentDate()), true)
 				// c.updateCount(fmt.Sprintf("%s.count", currentDate()), false)
