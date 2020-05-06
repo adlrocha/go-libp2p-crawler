@@ -54,69 +54,69 @@ func newCrawler(db *leveldb.DB) *Crawler {
 
 // Liveliness process to check if nodes are still alive.
 func (c *Crawler) liveliness() {
-	for {
-		select {
-		// Return if context done.
-		case <-c.ctx.Done():
-			return
+	// for {
+	select {
+	// Return if context done.
+	case <-c.ctx.Done():
+		return
+	default:
+	Alive:
+		iter := c.db.NewIterator(nil, nil)
+		// Iterate through all seen nodes to check if alive.
+		for iter.Next() {
+			key := string(iter.Key())
+			value := string(iter.Value())
+			if len(strings.Split(key, ".")) == 1 {
+				// Used to check if behind NAT or not.
+				var canConnectErr error
 
-		default:
-			iter := c.db.NewIterator(nil, nil)
-			// Iterate through all seen nodes to check if alive.
-			for iter.Next() {
-				key := string(iter.Key())
-				value := string(iter.Value())
+				// Test connection of found nodes
+				pString := fmt.Sprintf("/p2p/%s", key)
 
-				if len(strings.Split(key, ".")) == 1 {
+				p, err := multiaddr.NewMultiaddr(pString)
+				if err != nil {
+					panic(err)
+				}
 
-					// Used to check if behind NAT or not.
-					var canConnectErr error
+				pInfo, err := peer.AddrInfoFromP2pAddr(p)
 
-					// Test connection of found nodes
-					pString := fmt.Sprintf("/p2p/%s", key)
+				// fmt.Println("Checking if alive ", pInfo)
+				canConnectErr = c.ephemeralConnection(pInfo)
+				// if canConnectErr == nil {
+				// 	fmt.Println("Connected peer", pInfo.String())
+				// }
 
-					p, err := multiaddr.NewMultiaddr(pString)
-					if err != nil {
-						panic(err)
-					}
+				var node SeenNode
+				json.Unmarshal([]byte(value), &node)
+				timestamp := strconv.FormatInt(time.Now().UTC().UnixNano(), 10)
 
-					pInfo, err := peer.AddrInfoFromP2pAddr(p)
+				// If we could see the node but not anymore it means is out.
 
-					// fmt.Println("Checking if alive ", pInfo)
-					canConnectErr = c.ephemeralConnection(pInfo)
-					// if canConnectErr == nil {
-					// 	fmt.Println("Connected peer", pInfo.String())
-					// }
+				if node.NAT == false && canConnectErr != nil {
+					fmt.Println("Liveliness", key, node.NAT, canConnectErr)
+					c.updateCount(fmt.Sprintf("%s.left", currentDate()), true)
+					// c.updateCount(fmt.Sprintf("%s.count", currentDate()), false)
+					c.updateCount("total.count", false)
 
-					var node SeenNode
-					json.Unmarshal([]byte(value), &node)
-					timestamp := strconv.FormatInt(time.Now().UTC().UnixNano(), 10)
+					// Remove node from list
+					c.db.Delete([]byte(key), nil)
 
-					// If we could see the node but not anymore it means is out.
-					if node.NAT == false && canConnectErr != nil {
-						fmt.Println("Liveliness", key, node.NAT, canConnectErr)
-						c.updateCount(fmt.Sprintf("%s.left", currentDate()), true)
-						// c.updateCount(fmt.Sprintf("%s.count", currentDate()), false)
-						c.updateCount("total.count", false)
-
-						// Remove node from list
-						c.db.Delete([]byte(key), nil)
-
+				} else {
+					// If node already seen only update lastSeen
+					node.lastSeen = timestamp
+					if canConnectErr != nil {
+						node.NAT = true
 					} else {
-						// If node already seen only update lastSeen
-						node.lastSeen = timestamp
-						if canConnectErr != nil {
-							node.NAT = true
-						} else {
-							node.NAT = false
-						}
-						c.storeSeenNode(key, node)
+						node.NAT = false
 					}
+					c.storeSeenNode(key, node)
 				}
 			}
-			iter.Release()
 		}
+		iter.Release()
+		goto Alive
 	}
+	// }
 }
 
 // Initializes a crawling node.
@@ -268,8 +268,8 @@ func (c *Crawler) crawlFromKey(key string) {
 			// Store node in database
 			c.storeSeenNode(pID.String(), aux)
 			// Update counters
-			c.updateCount("total.count", true)
 			c.updateCount(fmt.Sprintf("%s.count", currentDate()), true)
+			c.updateCount("total.count", true)
 
 		} else {
 
@@ -297,7 +297,7 @@ func (c *Crawler) crawlFromKey(key string) {
 // Make ephemeral connections to nodes.
 func (c *Crawler) ephemeralConnection(pInfo *peer.AddrInfo) error {
 
-	ctx, cancel := context.WithTimeout(c.ctx, timeEphemeralConnections*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), timeEphemeralConnections*time.Second)
 
 	// TODO: Make a way of traversing NATs. Important
 	err := c.host.Connect(ctx, *pInfo)

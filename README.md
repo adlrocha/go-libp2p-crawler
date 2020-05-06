@@ -51,8 +51,9 @@ Some useful resources in case you want to understand or build upon the code:
 ### Questions
 * How to "easily" make connections to nodes behind NATs?
 * How to find specific peers with libp2p, or ask for the connected peers of a specific one?
-* 
+* Why [dht.FindPeer](https://godoc.org/github.com/libp2p/go-libp2p-kad-dht#IpfsDHT.FindPeer) 
+returns empty AddrInfo?
+* What is the best way to find new nodes in the network without specific application with libp2p?
+Notifee to listen to incoming connections? Using routingDiscovery? Or RandomWalk?
 
-- Take notes as you go (urls that you found helpful, questions you had, you can then use this to deliver feedback to the project as well)
-You are free to spend more time if you want to, however, we are more interested in learning what you looked for 
-in what you built, how you built it and what you learned from it.
+

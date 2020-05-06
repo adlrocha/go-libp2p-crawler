@@ -37,7 +37,7 @@ func reporting(ctx context.Context, db *leveldb.DB) {
 				churn = (float32(todayLeft) / float32(todayCount)) * 100
 			}
 			// TODO: Compute churn correctly with nodes seen today, yesterday and left today!!!
-			log.Printf("==== Total nodes active: %d, Total nodes seen today: %d, Total nodes left today: %d,  Daily churn: %f %%====",
+			log.Printf("==== Total nodes active: %d, Total nodes seen today: %d, Total nodes gone today: %d,  Daily churn: %f%%====",
 				totalCount, todayCount, todayLeft, churn)
 			time.Sleep(reportingTime * time.Second)
 		}
@@ -96,6 +96,7 @@ func main() {
 	// Liveliness started just in the first crawler. This can
 	// be easily changed setting an additional argument.
 	go crawlers[0].liveliness()
+
 	// Start reporting
 	go reporting(ctx, db)
 
