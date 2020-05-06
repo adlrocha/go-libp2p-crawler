@@ -18,7 +18,7 @@ go build
 ```
 By defualt, database information is stored in ./db. There is no way of configuring this path yet, but it should be easy for you to change this in `main.go`.
 
-# Design decisions and future work
+### Design decisions and future work
 
 * The tool uses LevelDB to store the data. I could have used other databases such as a MongoDB
 in order to have "smarter" querying and more functionalities, but I wanted the tool to
