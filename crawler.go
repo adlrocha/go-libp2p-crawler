@@ -95,8 +95,8 @@ func (c *Crawler) liveliness(verbose bool) {
 				timestamp := strconv.FormatInt(time.Now().UTC().UnixNano(), 10)
 
 				// If we could see the node but not anymore it means is out.
-				c.mux.Lock()
 				if node.NAT == false && canConnectErr != nil {
+					c.mux.Lock()
 					if verbose {
 						log.Println("[Liveliness] Node left:", key, node, canConnectErr)
 					}
@@ -107,6 +107,7 @@ func (c *Crawler) liveliness(verbose bool) {
 
 					// Remove node from list
 					c.db.Delete([]byte(key), nil)
+					c.mux.Unlock()
 
 				} else {
 					// If node already seen only update lastSeen
@@ -118,7 +119,6 @@ func (c *Crawler) liveliness(verbose bool) {
 					}
 					c.storeSeenNode(key, node)
 				}
-				c.mux.Unlock()
 			}
 		}
 		iter.Release()
