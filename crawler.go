@@ -7,6 +7,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/libp2p/go-libp2p"
@@ -35,10 +36,11 @@ type Crawler struct {
 	cancel context.CancelFunc
 	dht    *kaddht.IpfsDHT
 	db     *leveldb.DB
+	mux    *sync.Mutex
 }
 
 // Creates a new crawler node.
-func newCrawler(db *leveldb.DB) *Crawler {
+func newCrawler(db *leveldb.DB, mux *sync.Mutex) *Crawler {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	c := &Crawler{
@@ -48,6 +50,7 @@ func newCrawler(db *leveldb.DB) *Crawler {
 
 	// Gets database handler
 	c.db = db
+	c.mux = mux
 
 	return c
 }
@@ -91,15 +94,19 @@ func (c *Crawler) liveliness() {
 				timestamp := strconv.FormatInt(time.Now().UTC().UnixNano(), 10)
 
 				// If we could see the node but not anymore it means is out.
-
+				c.mux.Lock()
 				if node.NAT == false && canConnectErr != nil {
 					// fmt.Println("Liveliness", key, node.NAT, canConnectErr)
 					c.updateCount(fmt.Sprintf("%s.left", currentDate()), true)
 					// c.updateCount(fmt.Sprintf("%s.count", currentDate()), false)
 					c.updateCount("total.count", false)
+					c.updateCount("total.left", true)
 
 					// Remove node from list
 					c.db.Delete([]byte(key), nil)
+
+					fmt.Println("LIVELINESS NODE LEFT!")
+					fmt.Println("NodeStored", node, canConnectErr)
 
 				} else {
 					// If node already seen only update lastSeen
@@ -111,6 +118,7 @@ func (c *Crawler) liveliness() {
 					}
 					c.storeSeenNode(key, node)
 				}
+				c.mux.Unlock()
 			}
 		}
 		iter.Release()
@@ -155,9 +163,9 @@ func (c *Crawler) initCrawler(BootstrapNodes []string) {
 		panic(err)
 	}
 
-	for _, addr := range c.host.Addrs() {
-		fmt.Println("Listening on", addr)
-	}
+	// for _, addr := range c.host.Addrs() {
+	// 	fmt.Println("Listening on", addr)
+	// }
 
 	// Create routingDiscovery
 	// c.routingDisc = disc.NewRoutingDiscovery(c.dht)
@@ -178,9 +186,9 @@ func (c *Crawler) initCrawler(BootstrapNodes []string) {
 
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "connecting to bootstrap: %s\n", err)
-		} else {
-			fmt.Println("Connected to bootstrap", pInfo.ID)
-		}
+		} // else {
+		// 	fmt.Println("Connected to bootstrap", pInfo.ID)
+		// }
 
 		// Node in bootstrapped state. Ready to crawl.
 		err = c.dht.Bootstrap(c.ctx)
@@ -259,6 +267,9 @@ func (c *Crawler) crawlFromKey(key string) {
 		var aux SeenNode
 		timestamp := strconv.FormatInt(time.Now().UTC().UnixNano(), 10)
 
+		// Enforce atomic update
+		c.mux.Lock()
+		// If the key is empty in db we haven't seen it.
 		if stored, _ := c.getSeenNode(pID.String()); stored == aux {
 			hasNat := false
 			if canConnectErr != nil {
@@ -270,16 +281,17 @@ func (c *Crawler) crawlFromKey(key string) {
 			// Update counters
 			c.updateCount(fmt.Sprintf("%s.count", currentDate()), true)
 			c.updateCount("total.count", true)
-
+			fmt.Println("Random walk NEW NODE", aux)
 		} else {
 
 			// If we could see the node but not anymore it means is out.
 			if stored.NAT == false && canConnectErr != nil {
-				// fmt.Println("RandomWalk", pID.String(), stored.NAT, canConnectErr)
+				fmt.Println("RandomWalk LEFT!!", pID.String(), stored.NAT, canConnectErr)
 
 				c.updateCount(fmt.Sprintf("%s.left", currentDate()), true)
 				// c.updateCount(fmt.Sprintf("%s.count", currentDate()), false)
 				c.updateCount("total.count", false)
+				c.updateCount("total.left", false)
 
 				// Remove node from list
 				c.db.Delete([]byte(pID.String()), nil)
@@ -290,6 +302,7 @@ func (c *Crawler) crawlFromKey(key string) {
 				c.storeSeenNode(pID.String(), stored)
 			}
 		}
+		c.mux.Unlock()
 
 	}
 }
@@ -301,6 +314,13 @@ func (c *Crawler) ephemeralConnection(pInfo *peer.AddrInfo) error {
 
 	// TODO: Make a way of traversing NATs. Important
 	err := c.host.Connect(ctx, *pInfo)
+	errString := fmt.Sprintf("%v", err)
+	// If there is a context deadline, retry with a longer deadline.
+	if errString == "context deadline exceeded" {
+		ctx, cancel := context.WithTimeout(context.Background(), 4*timeEphemeralConnections*time.Second)
+		err = c.host.Connect(ctx, *pInfo)
+		cancel()
+	}
 	// if err != nil {
 	// 	fmt.Fprintf(os.Stderr, "connecting to node: %s\n", err)
 	// } else {

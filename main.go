@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"sync"
 	"syscall"
 	"time"
 
@@ -16,7 +17,7 @@ import (
 const (
 	reportingTime            = 10
 	timeEphemeralConnections = 5
-	timeClosestPeers         = 10
+	timeClosestPeers         = 5
 )
 
 func reporting(ctx context.Context, db *leveldb.DB) {
@@ -29,6 +30,7 @@ func reporting(ctx context.Context, db *leveldb.DB) {
 			//TODO: We can show more metrics here if needed.
 			// It would be easy to add number of nodes behind NAT or other metrics.
 			totalCount, _ := getCount(db, "total.count")
+			totalLeft, _ := getCount(db, "total.left")
 			todayCount, _ := getCount(db, fmt.Sprintf("%s.count", currentDate()))
 			// yesterdayCount, _ := getCount(db, fmt.Sprintf("%s.count", yesterday()))
 			todayLeft, _ := getCount(db, fmt.Sprintf("%s.left", currentDate()))
@@ -40,14 +42,22 @@ func reporting(ctx context.Context, db *leveldb.DB) {
 				churn = (float32(todayLeft) / float32(todayCount)) * 100
 			}
 			// TODO: Compute churn correctly with nodes seen today, yesterday and left today!!!
-			log.Printf("==== Total nodes active: %d, Total nodes seen today: %d, Total nodes gone today: %d,  Daily churn: %f%%====",
-				totalCount, todayCount, todayLeft, churn)
+			log.Printf("==== Total nodes active in run: %d, Total nodes left in run: %d, Total nodes seen today: %d, Total nodes gone today: %d,  Daily churn: %f%%====",
+				totalCount, totalLeft, todayCount, todayLeft, churn)
 			time.Sleep(reportingTime * time.Second)
 		}
 	}
 }
 
 func main() {
+
+	var err error
+
+	fmt.Println("Removing state from previous runs...")
+	err = os.RemoveAll("./db") // delete an entire directory
+	if err != nil {
+		fmt.Println("Error removing previous run databases", err)
+	}
 
 	BootstrapNodes := []string{
 		// IPFS Bootstrapper nodes.
@@ -73,7 +83,6 @@ func main() {
 	// Configure number of crawlers and liveliness
 	numCrawlers := 1
 	numLiveliness := 1
-	var err error
 	if len(os.Args) > 1 {
 		numCrawlers, err = strconv.Atoi(os.Args[1])
 		if err != nil {
@@ -81,7 +90,6 @@ func main() {
 		}
 		if len(os.Args) == 3 {
 			numLiveliness, err = strconv.Atoi(os.Args[2])
-			fmt.Println(numLiveliness, numCrawlers)
 			if (err != nil) || (numLiveliness > numCrawlers) {
 				log.Fatal("Wrong number of liveliness provided")
 			}
@@ -91,13 +99,15 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	dbPath := "./db"
 
+	mux := &sync.Mutex{}
+
 	db := initDB(dbPath)
 	defer db.Close()
-
+	fmt.Println("Bootstrapping crawlers...")
 	// Create and initialize crawlers
 	crawlers := make([]*Crawler, numCrawlers)
 	for i := 0; i < numCrawlers; i++ {
-		crawlers[i] = newCrawler(db)
+		crawlers[i] = newCrawler(db, mux)
 		go crawlers[i].initCrawler(BootstrapNodes)
 	}
 
@@ -127,5 +137,4 @@ func main() {
 	case <-ctx.Done():
 		return
 	}
-
 }
