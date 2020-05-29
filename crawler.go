@@ -105,9 +105,6 @@ func (c *Crawler) liveliness() {
 					// Remove node from list
 					c.db.Delete([]byte(key), nil)
 
-					fmt.Println("LIVELINESS NODE LEFT!")
-					fmt.Println("NodeStored", node, canConnectErr)
-
 				} else {
 					// If node already seen only update lastSeen
 					node.lastSeen = timestamp
@@ -281,12 +278,11 @@ func (c *Crawler) crawlFromKey(key string) {
 			// Update counters
 			c.updateCount(fmt.Sprintf("%s.count", currentDate()), true)
 			c.updateCount("total.count", true)
-			fmt.Println("Random walk NEW NODE", aux)
+			// fmt.Println("Random walk NEW NODE", pID.String(), aux)
 		} else {
-
 			// If we could see the node but not anymore it means is out.
 			if stored.NAT == false && canConnectErr != nil {
-				fmt.Println("RandomWalk LEFT!!", pID.String(), stored.NAT, canConnectErr)
+				// fmt.Println("RandomWalk LEFT!!", pID.String(), stored.NAT, canConnectErr)
 
 				c.updateCount(fmt.Sprintf("%s.left", currentDate()), true)
 				// c.updateCount(fmt.Sprintf("%s.count", currentDate()), false)
