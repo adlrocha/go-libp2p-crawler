@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"strconv"
 	"strings"
@@ -56,7 +57,7 @@ func newCrawler(db *leveldb.DB, mux *sync.Mutex) *Crawler {
 }
 
 // Liveliness process to check if nodes are still alive.
-func (c *Crawler) liveliness() {
+func (c *Crawler) liveliness(verbose bool) {
 	// for {
 	select {
 	// Return if context done.
@@ -96,7 +97,9 @@ func (c *Crawler) liveliness() {
 				// If we could see the node but not anymore it means is out.
 				c.mux.Lock()
 				if node.NAT == false && canConnectErr != nil {
-					// fmt.Println("Liveliness", key, node.NAT, canConnectErr)
+					if verbose {
+						log.Println("[Liveliness] Node left:", key, node, canConnectErr)
+					}
 					c.updateCount(fmt.Sprintf("%s.left", currentDate()), true)
 					// c.updateCount(fmt.Sprintf("%s.count", currentDate()), false)
 					c.updateCount("total.count", false)
@@ -125,7 +128,7 @@ func (c *Crawler) liveliness() {
 }
 
 // Initializes a crawling node.
-func (c *Crawler) initCrawler(BootstrapNodes []string) {
+func (c *Crawler) initCrawler(BootstrapNodes []string, verbose bool) {
 
 	transports := libp2p.ChainOptions(
 		libp2p.Transport(tcp.NewTCPTransport),
@@ -205,13 +208,13 @@ func (c *Crawler) initCrawler(BootstrapNodes []string) {
 			return
 		default:
 			// Start random walk
-			c.randomWalk()
+			c.randomWalk(verbose)
 		}
 	}
 }
 
 // Random DHT walk performed by crawler.
-func (c *Crawler) randomWalk() {
+func (c *Crawler) randomWalk(verbose bool) {
 
 	// Choose a random ID
 	id, err := test.RandPeerID()
@@ -221,10 +224,10 @@ func (c *Crawler) randomWalk() {
 	key := id.String()
 
 	// Start crawling from key starting from random node.
-	c.crawlFromKey(key)
+	c.crawlFromKey(key, verbose)
 }
 
-func (c *Crawler) crawlFromKey(key string) {
+func (c *Crawler) crawlFromKey(key string, verbose bool) {
 
 	// Make 60 seconds crawls
 	ctx, cancel := context.WithTimeout(c.ctx, timeClosestPeers*time.Second)
@@ -278,7 +281,10 @@ func (c *Crawler) crawlFromKey(key string) {
 			// Update counters
 			c.updateCount(fmt.Sprintf("%s.count", currentDate()), true)
 			c.updateCount("total.count", true)
-			// fmt.Println("Random walk NEW NODE", pID.String(), aux)
+			if verbose {
+				log.Println("[Random Walk] New Node: ", pID.String(), aux)
+			}
+
 		} else {
 			// If we could see the node but not anymore it means is out.
 			if stored.NAT == false && canConnectErr != nil {

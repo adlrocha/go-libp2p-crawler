@@ -2,11 +2,11 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"log"
 	"os"
 	"os/signal"
-	"strconv"
 	"sync"
 	"syscall"
 	"time"
@@ -18,6 +18,7 @@ const (
 	reportingTime            = 10
 	timeEphemeralConnections = 5
 	timeClosestPeers         = 5
+	dbPath                   = "./db"
 )
 
 func reporting(ctx context.Context, db *leveldb.DB) {
@@ -41,7 +42,6 @@ func reporting(ctx context.Context, db *leveldb.DB) {
 			} else {
 				churn = (float32(todayLeft) / float32(todayCount)) * 100
 			}
-			// TODO: Compute churn correctly with nodes seen today, yesterday and left today!!!
 			log.Printf("==== Total nodes active in run: %d, Total nodes left in run: %d, Total nodes seen today: %d, Total nodes gone today: %d,  Daily churn: %f%%====",
 				totalCount, totalLeft, todayCount, todayLeft, churn)
 			time.Sleep(reportingTime * time.Second)
@@ -50,13 +50,24 @@ func reporting(ctx context.Context, db *leveldb.DB) {
 }
 
 func main() {
+	numLiveliness := flag.Int("liveliness", 1, "Number of liveliness nodes")
+	numCrawlers := flag.Int("crawler", 1, "Number of crawler nodes")
+	verbose := flag.Bool("verbose", false, "Verbose mode")
+	flag.Parse()
 
+	log.Printf("Running crawler with %v crawler nodes and %v liveliness nodes", *numCrawlers, *numLiveliness)
+
+	if *numLiveliness > *numCrawlers {
+		log.Fatal("Wrong number of liveliness nodes provided. There should be less liveliness nodes or equal to crawler nodes")
+	}
+
+	// fmt.Println(*numCrawlers, *numLiveliness, *verbose)
 	var err error
 
-	fmt.Println("Removing state from previous runs...")
-	err = os.RemoveAll("./db") // delete an entire directory
+	log.Println("Removing state from previous runs...")
+	err = os.RemoveAll(dbPath) // delete an entire directory
 	if err != nil {
-		fmt.Println("Error removing previous run databases", err)
+		log.Fatal("Error removing previous run databases", err)
 	}
 
 	BootstrapNodes := []string{
@@ -80,35 +91,18 @@ func main() {
 		"/p2p/QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA3gU1ZjYZcYW3dwt",
 	}
 
-	// Configure number of crawlers and liveliness
-	numCrawlers := 1
-	numLiveliness := 1
-	if len(os.Args) > 1 {
-		numCrawlers, err = strconv.Atoi(os.Args[1])
-		if err != nil {
-			log.Fatal("Wrong number of crawlers provided")
-		}
-		if len(os.Args) == 3 {
-			numLiveliness, err = strconv.Atoi(os.Args[2])
-			if (err != nil) || (numLiveliness > numCrawlers) {
-				log.Fatal("Wrong number of liveliness provided")
-			}
-		}
-	}
-
 	ctx, cancel := context.WithCancel(context.Background())
-	dbPath := "./db"
 
 	mux := &sync.Mutex{}
 
 	db := initDB(dbPath)
 	defer db.Close()
-	fmt.Println("Bootstrapping crawlers...")
+	log.Println("Bootstrapping crawlers...")
 	// Create and initialize crawlers
-	crawlers := make([]*Crawler, numCrawlers)
-	for i := 0; i < numCrawlers; i++ {
+	crawlers := make([]*Crawler, *numCrawlers)
+	for i := 0; i < *numCrawlers; i++ {
 		crawlers[i] = newCrawler(db, mux)
-		go crawlers[i].initCrawler(BootstrapNodes)
+		go crawlers[i].initCrawler(BootstrapNodes, *verbose)
 	}
 
 	// Start reporting after 30 seconds to let bootstrap happen
@@ -117,8 +111,8 @@ func main() {
 
 	// Liveliness started just in the first crawler. This can
 	// be easily changed setting an additional argument.
-	for i := 0; i < numLiveliness; i++ {
-		go crawlers[i].liveliness()
+	for i := 0; i < *numLiveliness; i++ {
+		go crawlers[i].liveliness(*verbose)
 	}
 
 	// Start reporting
@@ -130,7 +124,7 @@ func main() {
 	select {
 	case <-stop:
 		cancel()
-		for i := 0; i < numCrawlers; i++ {
+		for i := 0; i < *numCrawlers; i++ {
 			crawlers[i].close()
 		}
 		os.Exit(0)

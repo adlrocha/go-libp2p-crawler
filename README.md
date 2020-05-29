@@ -11,10 +11,9 @@ to compute the daily churn.
 
 To run the tool, run the following command. The default number of workers is 1, but
 you can assign more if needed. You can also choose the number of workers to run the liveliness process.
-
 ```
 go build
-./go-libp2p-crawler <num_workers> <num_liveliness>
+./go-libp2p-crawler -crawler=<num_workers> -liveliness=<num_liveliness> -verbose
 ```
 By defualt, database information is stored in ./db. There is no way of configuring this path yet, but it should be easy for you to change this in `main.go`.
 
