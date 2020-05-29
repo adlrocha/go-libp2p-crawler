@@ -13,8 +13,11 @@ import (
 	"github.com/syndtr/goleveldb/leveldb"
 )
 
-const reportingTime = 10
-const timeEphemeralConnections = 15
+const (
+	reportingTime            = 10
+	timeEphemeralConnections = 5
+	timeClosestPeers         = 10
+)
 
 func reporting(ctx context.Context, db *leveldb.DB) {
 	for {

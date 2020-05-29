@@ -222,7 +222,7 @@ func (c *Crawler) randomWalk() {
 func (c *Crawler) crawlFromKey(key string) {
 
 	// Make 60 seconds crawls
-	ctx, cancel := context.WithTimeout(c.ctx, 60*time.Second)
+	ctx, cancel := context.WithTimeout(c.ctx, timeClosestPeers*time.Second)
 	pch, _ := c.dht.GetClosestPeers(ctx, key)
 
 	// No peers found
