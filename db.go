@@ -1,10 +1,8 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"log"
-	"strconv"
 	"time"
 
 	"github.com/syndtr/goleveldb/leveldb"
@@ -32,67 +30,26 @@ func yesterday() string {
 	return date
 }
 
-func getCount(db *leveldb.DB, key string) (int, error) {
-	data, err := db.Get([]byte(key), nil)
-	// If counter not set yet make it zero.
-	var counter int
-	if string(data) == "" {
-		counter = 0
-	} else {
-		counter, _ = strconv.Atoi(string(data))
+func (c *Crawler) updateCountersToday(counter string, increment bool) {
+	if c.counters.startingDate != currentDate() {
+		c.counters.startingDate = currentDate()
+		c.counters.leftNodesToday = 0
+		c.counters.seenNodesToday = c.counters.activeNodes
 	}
 
-	return counter, err
-}
-
-func (c *Crawler) storeSeenNode(key string, node SeenNode) error {
-	nodeRaw, _ := json.Marshal(node)
-	err := c.db.Put([]byte(key), nodeRaw, nil)
-	return err
-}
-
-func (c *Crawler) getSeenNode(key string) (SeenNode, error) {
-	var node SeenNode
-	data, err := c.db.Get([]byte(key), nil)
-	json.Unmarshal(data, &node)
-
-	return node, err
-}
-
-func (c *Crawler) updateCount(key string, add bool) (int, error) {
-
-	data, err := c.db.Get([]byte(key), nil)
-
-	var counter int
-	// If counter not set yet
-	if string(data) == "" {
-		// If total count set to zero
-		if key == "total.count" {
-			counter = 0
-		} else if key == fmt.Sprintf("%s.count", currentDate()) {
-			// If no data for today start with previous total nodes
-			// (baseline for the day)
-			data, err = c.db.Get([]byte("total.count"), nil)
-
-			if string(data) == "" {
-				counter = 0
-			} else {
-				counter, _ = strconv.Atoi(string(data))
-			}
+	if counter == "seen" {
+		if increment {
+			c.counters.seenNodesToday++
+		} else {
+			c.counters.seenNodesToday--
+		}
+	} else if counter == "left" {
+		if increment {
+			c.counters.leftNodesToday++
+		} else {
+			c.counters.leftNodes--
 		}
 	} else {
-		// If counter exists just assign the previous value as start.
-		counter, _ = strconv.Atoi(string(data))
+		panic("Passed wrong counter type to update data")
 	}
-
-	// Update counter
-	if add {
-		counter++
-	} else {
-		counter--
-	}
-	cString := strconv.Itoa(counter)
-	err = c.db.Put([]byte(key), []byte(cString), nil)
-
-	return counter, err
 }

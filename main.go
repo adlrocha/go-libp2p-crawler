@@ -3,15 +3,12 @@ package main
 import (
 	"context"
 	"flag"
-	"fmt"
 	"log"
 	"os"
 	"os/signal"
 	"sync"
 	"syscall"
 	"time"
-
-	"github.com/syndtr/goleveldb/leveldb"
 )
 
 const (
@@ -21,20 +18,18 @@ const (
 	dbPath                   = "./db"
 )
 
-func reporting(ctx context.Context, db *leveldb.DB) {
+func reporting(ctx context.Context, c *Counters) {
 	for {
 		select {
 		case <-ctx.Done():
 			return
 
 		default:
-			//TODO: We can show more metrics here if needed.
 			// It would be easy to add number of nodes behind NAT or other metrics.
-			totalCount, _ := getCount(db, "total.count")
-			totalLeft, _ := getCount(db, "total.left")
-			todayCount, _ := getCount(db, fmt.Sprintf("%s.count", currentDate()))
-			// yesterdayCount, _ := getCount(db, fmt.Sprintf("%s.count", yesterday()))
-			todayLeft, _ := getCount(db, fmt.Sprintf("%s.left", currentDate()))
+			totalCount := c.activeNodes
+			totalLeft := c.leftNodes
+			todayLeft := c.leftNodesToday
+			todayCount := c.seenNodesToday
 			var churn float32
 
 			if totalCount == 0 {
@@ -95,13 +90,14 @@ func main() {
 
 	mux := &sync.Mutex{}
 
-	db := initDB(dbPath)
-	defer db.Close()
+	listNodes := make(map[string]int, 0)
+	counters := Counters{startingDate: currentDate(), listNodes: listNodes}
+
 	log.Println("Bootstrapping crawlers...")
 	// Create and initialize crawlers
 	crawlers := make([]*Crawler, *numCrawlers)
 	for i := 0; i < *numCrawlers; i++ {
-		crawlers[i] = newCrawler(db, mux)
+		crawlers[i] = newCrawler(mux, &counters)
 		go crawlers[i].initCrawler(BootstrapNodes, *verbose)
 	}
 
@@ -116,7 +112,7 @@ func main() {
 	}
 
 	// Start reporting
-	go reporting(ctx, db)
+	go reporting(ctx, &counters)
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT)

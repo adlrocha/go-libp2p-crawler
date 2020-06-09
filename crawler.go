@@ -2,12 +2,9 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"os"
-	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -20,7 +17,6 @@ import (
 	secio "github.com/libp2p/go-libp2p-secio"
 	"github.com/libp2p/go-tcp-transport"
 	"github.com/multiformats/go-multiaddr"
-	"github.com/syndtr/goleveldb/leveldb"
 )
 
 // SeenNode struct
@@ -32,16 +28,26 @@ type SeenNode struct {
 
 // Crawler node structure
 type Crawler struct {
-	host   host.Host
-	ctx    context.Context
-	cancel context.CancelFunc
-	dht    *kaddht.IpfsDHT
-	db     *leveldb.DB
-	mux    *sync.Mutex
+	host     host.Host
+	ctx      context.Context
+	cancel   context.CancelFunc
+	dht      *kaddht.IpfsDHT
+	mux      *sync.Mutex
+	counters *Counters
+}
+
+// Counters shared by all routines
+type Counters struct {
+	activeNodes    int64
+	seenNodesToday int64
+	leftNodes      int64
+	leftNodesToday int64
+	listNodes      map[string]int //0 - not seen; 1 - Behind NAT; 2 - Seen
+	startingDate   string
 }
 
 // Creates a new crawler node.
-func newCrawler(db *leveldb.DB, mux *sync.Mutex) *Crawler {
+func newCrawler(mux *sync.Mutex, counters *Counters) *Crawler {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	c := &Crawler{
@@ -49,9 +55,9 @@ func newCrawler(db *leveldb.DB, mux *sync.Mutex) *Crawler {
 		cancel: cancel,
 	}
 
-	// Gets database handler
-	c.db = db
+	// Initialize mux and counters
 	c.mux = mux
+	c.counters = counters
 
 	return c
 }
@@ -65,64 +71,46 @@ func (c *Crawler) liveliness(verbose bool) {
 		return
 	default:
 	Alive:
-		iter := c.db.NewIterator(nil, nil)
+
 		// Iterate through all seen nodes to check if alive.
-		for iter.Next() {
-			key := string(iter.Key())
-			value := string(iter.Value())
-			if len(strings.Split(key, ".")) == 1 {
-				// Used to check if behind NAT or not.
-				var canConnectErr error
+		for key, value := range c.counters.listNodes {
 
-				// Test connection of found nodes
-				pString := fmt.Sprintf("/p2p/%s", key)
+			// Used to check if behind NAT or not.
+			var canConnectErr error
 
-				p, err := multiaddr.NewMultiaddr(pString)
-				if err != nil {
-					panic(err)
+			// Test connection of found nodes
+			pString := fmt.Sprintf("/p2p/%s", key)
+
+			p, err := multiaddr.NewMultiaddr(pString)
+			if err != nil {
+				panic(err)
+			}
+
+			pInfo, err := peer.AddrInfoFromP2pAddr(p)
+
+			// fmt.Println("Checking if alive ", pInfo)
+			canConnectErr = c.ephemeralConnection(pInfo)
+			// if canConnectErr == nil {
+			// 	fmt.Println("Connected peer", pInfo.String())
+			// }
+
+			if value == 2 && canConnectErr != nil {
+				c.mux.Lock()
+				if verbose {
+					log.Println("[Liveliness] Node left:", key, canConnectErr)
 				}
+				c.counters.listNodes[key] = 0
+				c.counters.leftNodes++
+				c.updateCountersToday("left", true)
+				c.counters.activeNodes--
+				// fmt.Println("Status of counters", c.counters.activeNodes, c.counters.leftNodes)
 
-				pInfo, err := peer.AddrInfoFromP2pAddr(p)
-
-				// fmt.Println("Checking if alive ", pInfo)
-				canConnectErr = c.ephemeralConnection(pInfo)
-				// if canConnectErr == nil {
-				// 	fmt.Println("Connected peer", pInfo.String())
-				// }
-
-				var node SeenNode
-				json.Unmarshal([]byte(value), &node)
-				timestamp := strconv.FormatInt(time.Now().UTC().UnixNano(), 10)
-
-				// If we could see the node but not anymore it means is out.
-				// c.mux.Lock()
-				if node.NAT == false && canConnectErr != nil {
-					c.mux.Lock()
-					if verbose {
-						log.Println("[Liveliness] Node left:", key, node, canConnectErr)
-					}
-					c.updateCount(fmt.Sprintf("%s.left", currentDate()), true)
-					// c.updateCount(fmt.Sprintf("%s.count", currentDate()), false)
-					c.updateCount("total.count", false)
-					c.updateCount("total.left", true)
-
-					// Remove node from list
-					c.db.Delete([]byte(key), nil)
-					c.mux.Unlock()
-				} else {
-					// If node already seen only update lastSeen
-					node.lastSeen = timestamp
-					if canConnectErr != nil {
-						node.NAT = true
-					} else {
-						node.NAT = false
-					}
-					c.storeSeenNode(key, node)
-				}
-				// c.mux.Unlock()
+				// Remove node from list
+				// c.db.Delete([]byte(key), nil)
+				c.mux.Unlock()
 			}
 		}
-		iter.Release()
+
 		goto Alive
 	}
 	// }
@@ -265,44 +253,37 @@ func (c *Crawler) crawlFromKey(key string, verbose bool) {
 		// 	fmt.Println("Connected peer", pInfo.String())
 		// }
 
-		var aux SeenNode
-		timestamp := strconv.FormatInt(time.Now().UTC().UnixNano(), 10)
-
 		// Enforce atomic update
 		c.mux.Lock()
 		// If the key is empty in db we haven't seen it.
-		if stored, _ := c.getSeenNode(pID.String()); stored == aux {
-			hasNat := false
+		if c.counters.listNodes[pID.String()] == 0 {
+			// hasNat := false
+			nat := 2
 			if canConnectErr != nil {
-				hasNat = true
+				// hasNat = true
+				nat = 1
 			}
-			aux = SeenNode{NAT: hasNat, lastSeen: timestamp}
 			// Store node in database
-			c.storeSeenNode(pID.String(), aux)
+			c.counters.listNodes[pID.String()] = nat
 			// Update counters
-			c.updateCount(fmt.Sprintf("%s.count", currentDate()), true)
-			c.updateCount("total.count", true)
+			c.counters.activeNodes++
+			c.updateCountersToday("seen", true)
+			// fmt.Println("Status of counters", c.counters.activeNodes, c.counters.leftNodes)
+
 			if verbose {
-				log.Println("[Random Walk] New Node: ", pID.String(), aux)
+				log.Println("[Random Walk] New Node: ", pID.String())
 			}
 
 		} else {
 			// If we could see the node but not anymore it means is out.
-			if stored.NAT == false && canConnectErr != nil {
+			if c.counters.listNodes[pID.String()] == 2 && canConnectErr != nil {
 				// fmt.Println("RandomWalk LEFT!!", pID.String(), stored.NAT, canConnectErr)
-
-				c.updateCount(fmt.Sprintf("%s.left", currentDate()), true)
-				// c.updateCount(fmt.Sprintf("%s.count", currentDate()), false)
-				c.updateCount("total.count", false)
-				c.updateCount("total.left", false)
-
 				// Remove node from list
-				c.db.Delete([]byte(pID.String()), nil)
-
-			} else {
-				// If node already seen only update lastSeen
-				stored.lastSeen = timestamp
-				c.storeSeenNode(pID.String(), stored)
+				c.counters.listNodes[pID.String()] = 0
+				// Update counters
+				c.counters.leftNodes++
+				c.counters.activeNodes--
+				c.updateCountersToday("left", true)
 			}
 		}
 		c.mux.Unlock()
