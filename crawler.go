@@ -35,7 +35,7 @@ type Counters struct {
 	seenNodesToday int64
 	leftNodes      int64
 	leftNodesToday int64
-	listNodes      map[string]int //0 - not seen; 1 - Behind NAT; 2 - Seen
+	listNodes      map[string]int //0: not seen; 1: Behind NAT; 2: Seen
 	startingDate   string
 }
 
