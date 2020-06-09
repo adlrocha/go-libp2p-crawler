@@ -19,13 +19,6 @@ import (
 	"github.com/multiformats/go-multiaddr"
 )
 
-// SeenNode struct
-// TODO: More info from seen nodes could be extracted.
-type SeenNode struct {
-	NAT      bool
-	lastSeen string
-}
-
 // Crawler node structure
 type Crawler struct {
 	host     host.Host
